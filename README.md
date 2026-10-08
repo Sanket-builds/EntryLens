@@ -308,23 +308,60 @@ Only unsure rows get here. The **same SLM** reads the row four different ways an
 - **Three separate splits:** train teaches the model, calibrate sets the trust thresholds, and test is never touched until the final score.
 ---
  
-### 8.5 Example: One Tricky Row
- 
+````md
+### 8.5 Example: How EntryLens Catches a Mistake
+
+> **Situation:** A company transfers ₹50,000 from **HDFC Bank → ICICI Bank**.  
+> Is it a **Payment** or a **Contra**?
+
+#### The row
+
+```text
+From account = HDFC Bank
+To account   = ICICI Bank
+Amount       = ₹50,000
+Supplier     = none
+Customer     = none
+Invoice      = none
+GST          = none
+````
+
+#### What EntryLens does
+
+```text
+🧠 Model prediction
+Payment 61% | Contra 34%
+→ Payment
+
+        ↓
+
+🛡️ Trust checks
+✓ Bank → bank transfer
+✓ No supplier/customer
+✓ No invoice or GST
+→ {Payment, Contra}
+
+        ↓
+
+🔬 Multi-view verification
+Raw       → Contra
+Signals   → Contra
+Masked    → Contra
+Examples  → Contra
+
+        ↓
+
+✅ FINAL: Contra
+   Verified 4/4
 ```
-Row        GRN-0457  (quantities, a supplier, some GST)
- 
-Model      Receipt Note 51%, Purchase 44%     -> two labels, not clean
-Familiar?  similarity 0.38                    -> unfamiliar row
-Route      Verify
- 
-Views      Raw: Purchase  |  Signals: Receipt Note  |  Masked: Purchase  |  Examples: Receipt Note
-Vote       2 of 4                             -> views split
- 
-Result     status = review, label = Receipt Note, competing = Purchase
-           review priority = high             -> top of the reviewer's queue
+
+> 💡 **Why it matters:** A normal classifier may stop at **Payment**. EntryLens checks the prediction, finds conflicting evidence, and verifies it before accepting the final label.
+
 ```
- 
----
+
+This keeps the example focused on the one thing you want judges to understand: **EntryLens doesn't blindly trust the first model prediction.**
+```
+
  
 ### 8.6 Why This Design Works
  
