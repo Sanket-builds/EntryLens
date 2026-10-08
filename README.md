@@ -6,30 +6,61 @@
 
 **EntryLens doesn't just predict a voucher type. It tests whether that prediction makes accounting sense.**
 
+## 📑 Table of Contents
+
+- [1. Problem Statement](#1-problem-statement)
+  - [The Core Challenge](#the-core-challenge)
+- [2. Target Voucher Categories (27)](#2-target-voucher-categories-27)
+- [3. Proposed Solution](#3-proposed-solution)
+- [4. Signature Features: Testing Whether a Prediction Makes Accounting Sense](#4-signature-features-testing-whether-a-prediction-makes-accounting-sense)
+  - [4.1 Counterfactual Accounting Engine](#41-counterfactual-accounting-engine)
+  - [4.2 Accounting Evidence Graph](#42-accounting-evidence-graph)
+  - [4.3 Multi-View AI Verification](#43-multi-view-ai-verification)
+  - [4.4 Conformal Prediction Sets](#44-conformal-prediction-sets)
+  - [4.5 Out-of-Distribution Detector](#45-out-of-distribution-detector)
+  - [4.6 How the Features Combine: Confidence Layer and Routing](#46-how-the-features-combine-confidence-layer-and-routing)
+- [5. Target Users](#5-target-users)
+- [6. Selected Open-Source AI Technology](#6-selected-open-source-ai-technology)
+- [7. Role of AI](#7-role-of-ai)
+- [8. Architecture](#8-architecture)
+  - [8.1 The Big Picture](#81-the-big-picture)
+  - [8.2 Zoom In: The Trust Check](#82-zoom-in-the-trust-check)
+  - [8.3 Zoom In: Verification and Final Status](#83-zoom-in-verification-and-final-status)
+  - [8.4 Zoom In: Build Time](#84-zoom-in-build-time-done-once)
+  - [8.5 Example: One Tricky Row](#85-example-one-tricky-row)
+  - [8.6 Why This Design Works](#86-why-this-design-works)
+- [9. Data Flow](#9-data-flow)
+- [10. Expected Output](#10-expected-output)
+- [11. Training Data and Reproducible Evaluation](#11-training-data-and-reproducible-evaluation)
+- [12. Technology Stack](#12-technology-stack)
+- [13. Implementation Plan (Final Hackathon)](#13-implementation-plan-final-hackathon)
+- [14. Scalability](#14-scalability)
+- [15. Dependencies](#15-dependencies)
+- [16. Expected Challenges and Mitigations](#16-expected-challenges-and-mitigations)
 ---
 
 ## 1. Problem Statement
 
-Accounting systems need every transaction recorded under the correct voucher type. Keyword rules fail because many voucher types carry almost identical fields and differ only in accounting meaning.
+Accounting systems require every transaction to be assigned to the correct voucher type. The challenge is that many voucher types contain almost identical fields and differ mainly in their accounting meaning.
 
-This project addresses **Challenge 4**. The input is an Excel (`.xlsx`) file of already-structured transactions, where each row is a transaction or document and the **voucher-type column is intentionally missing**. This is **not** an OCR or invoice-extraction task. The system must predict **one voucher category per row** by reasoning over the complete transaction context.
+Keyword-based rules are not enough. A transaction must be classified using its **complete context, direction, and accounting intent**.
 
-Accuracy alone is not enough. A classifier that cannot tell which of its predictions to doubt forces accountants to re-check every row, and a confidently wrong voucher type silently misposts entries. EntryLens therefore answers two questions for every row: **what voucher is this?** and **does that answer make accounting sense, and how far can it be trusted?**
+This project addresses **Challenge 4**: the input is an already-structured Excel (`.xlsx`) file containing transactions, with the **voucher-type column intentionally missing**.
 
-### Core challenge: semantically similar categories
+This is not an OCR or invoice-extraction problem. The system must predict **one voucher category per row** by reasoning over the available transaction context.
 
-| Look-alike pair or group | What actually separates them |
+## The Core Challenge
+
+The difficult cases are voucher types that look similar but have different accounting meanings.
+
+| Similar Categories | What Separates Them |
 |---|---|
-| Purchase vs Sales | Whether the company is the buyer or the seller |
-| Purchase Return / Debit Note vs Sales Return / Credit Note | Return indicators plus direction: goods going back to a supplier, or coming back from a customer |
-| Payment vs Receipt vs **Contra** | Money out vs money in with an external party, vs transfers between the company's own cash/bank accounts |
-| Journal vs Purchase/Sales | Adjusting Dr/Cr entries with no goods or payment flow |
-| Salary / Payroll vs Expense vs Attendance | Employee and payroll fields (basic pay, deductions, days worked) vs ordinary overheads |
-| Inventory movement (Material In/Out, Receipt/Delivery Note, Stock Journal, Physical Stock, Rejection In/Out) vs Purchase/Sales | Quantity movement with little or no monetary or GST value; order, challan, or count references |
-| Purchase Order / Sales Order vs Purchase/Sales | Order references with no invoice, payment, or stock movement yet |
-| Import / Export vs domestic Purchase/Sales | Foreign currency, customs or port details, and zero-rated or IGST treatment |
-| Advance / Prepayment vs Payment | Payment made before goods or invoice, tied to an order reference |
-| Job Work In/Out Order vs Material In/Out | Material sent or received for processing, with a job-work reference |
+| **Purchase vs Sales** | Is the company buying or selling? |
+| **Purchase Return vs Sales Return** | Are goods going back to the supplier or returning from the customer? |
+| **Payment vs Receipt vs Contra** | Money out, money in, or transfer between company accounts? |
+| **Journal vs Purchase/Sales** | Accounting adjustment without an actual goods or payment flow. |
+| **Inventory vs Purchase/Sales** | Stock movement without the same financial transaction context. |
+| **Order vs Purchase/Sales** | An order exists, but no invoice, payment, or stock movement has occurred yet. |
 
 ## 2. Target Voucher Categories (27)
 
@@ -221,21 +252,87 @@ The trust layer follows the same principle. Counterfactual probes and multi-view
 
 ## 8. Architecture
 
-> **TODO: Architecture diagram goes here.** Reserved for the end-to-end EntryLens pipeline.
+---
+### 8.1 The Big Picture
+ 
+Every row goes through five steps. Easy rows move straight through. Unsure rows get extra checks.
+ 
+<img width="692" height="717" alt="image" src="https://github.com/user-attachments/assets/99fade42-342e-445d-a284-1965b979bb69" />
 
-<!--
-Components to show (left to right):
-Transaction Understanding (ingestion and normalization) and Semantic Signals
-→ Prompt Builder
-→ Fine-tuned SLM (QLoRA, constrained decoding, 27 labels)
-→ Counterfactual Checking, Evidence Graph, OOD detector
-→ Confidence Layer (conformal prediction sets)
-→ Accept, Retrieval + Verify (multi-view), or Abstain
-→ Final Label
-→ Audit + Review
-→ JSON / CSV output
+ 
+| Step | One-liner explanation|
+|---|---|
+| 🔎 **Understand** | *We never drop a field. Messy columns become clear accounting hints.* |
+| 🧠 **Decide** | *The model decides. Rules never pick the label.* |
+| 🛡️ **Trust check** | *Every answer is tested before anyone relies on it.* |
+| ⚖️ **Route** | *Easy rows go fast. Hard rows get more checks.* |
+| 📦 **Output** | *Every decision leaves a record that can be audited.* |
+ 
+---
+ 
+### 8.2 Zoom In: The Trust Check
+ 
+Four tests run on every row. Together they answer one question: **does this label make accounting sense?**
+ 
+<img width="701" height="387" alt="image" src="https://github.com/user-attachments/assets/c5ad3700-c0e1-48c2-ad78-eaee4f8cc623" />
 
-Image option: ![EntryLens architecture](docs/architecture.png)
+ 
+| Test | One-liner for the judges |
+|---|---|
+| 🔁 **Counterfactual** | *Swap buyer and seller. If the label does not flip, the model was guessing.* |
+| 🕸️ **Evidence graph** | *Every reason points to a real input field, not a made-up story.* |
+| 🎯 **Conformal set** | *Instead of one shaky number, we show the short list of possible answers.* |
+| 🧭 **OOD detector** | *The system can say: I have never seen a row like this.* |
+ 
+---
+ 
+### 8.3 Zoom In: Verification and Final Status
+ 
+Only unsure rows get here. The **same SLM** reads the row four different ways and the views vote.
+ 
+<img width="682" height="600" alt="image" src="https://github.com/user-attachments/assets/8dd89b07-7f3a-4d23-b4cc-f396cc5f2b90" />
+
+ 
+| Status | What it means |
+|---|---|
+| ✅ `accepted` | Passed every first check. Final right away. |
+| ✅ `verified` | Unsure at first, but all four views agreed. |
+| ⚠️ `review` | Views split. Best label is shown with the competing labels. |
+| 🚫 `abstain` | Too uncertain. Label is `Other / Miscellaneous` and the row goes to review. |
+ 
+---
+ 
+### 8.4 Zoom In: Build Time (Done Once)
+ 
+- **One rulebook, three users:** the data generator, the counterfactual engine and the evidence graph all read the same rules, so they never disagree.
+- **Three separate splits:** train teaches the model, calibrate sets the trust thresholds, and test is never touched until the final score.
+---
+ 
+### 8.5 Example: One Tricky Row
+ 
+```
+Row        GRN-0457  (quantities, a supplier, some GST)
+ 
+Model      Receipt Note 51%, Purchase 44%     -> two labels, not clean
+Familiar?  similarity 0.38                    -> unfamiliar row
+Route      Verify
+ 
+Views      Raw: Purchase  |  Signals: Receipt Note  |  Masked: Purchase  |  Examples: Receipt Note
+Vote       2 of 4                             -> views split
+ 
+Result     status = review, label = Receipt Note, competing = Purchase
+           review priority = high             -> top of the reviewer's queue
+```
+ 
+---
+ 
+### 8.6 Why This Design Works
+ 
+- 🧠 **The model decides.** Rules only add hints and run checks.
+- 🛡️ **It knows when to doubt itself.** Independent checks decide how far to trust each label.
+- 🔍 **It can explain itself.** Every reason traces to a real input field.
+- ⚡ **It stays fast.** Only unsure rows get the extra views.
+- 🔒 **It stays private.** Small open-weight models run on-prem. No proprietary API is used.
 -->
 
 ## 9. Data Flow
@@ -399,9 +496,3 @@ Python 3.10+, PyTorch, Transformers, PEFT, bitsandbytes, TRL, pandas, openpyxl, 
 | Class imbalance (rare types such as Physical Stock, Job Work orders) | Balanced sampling, class weighting, per-class evaluation |
 | Inference speed and compute limits | Small quantized model, constrained decoding, batching, tiered verification (multi-view runs only on rows that are not accepted outright) |
 
-## 17. Compliance with Challenge Rules
-
-- One track only: **Challenge 4**.
-- Primary classification engine is an **open-weight LLM/SLM**; no proprietary API. The trust layer reuses the same model and open-source libraries, and it never replaces the SLM as the classifier.
-- Qualifier repository contains **README.md only**; implementation happens in the final round.
-- Predictions are structured and evaluable programmatically, with a reproducible evaluation method.
