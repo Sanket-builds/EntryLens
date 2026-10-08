@@ -27,7 +27,7 @@
   - [8.2 Zoom In: The Trust Check](#82-zoom-in-the-trust-check)
   - [8.3 Zoom In: Verification and Final Status](#83-zoom-in-verification-and-final-status)
   - [8.4 Zoom In: Build Time](#84-zoom-in-build-time-done-once)
-  - [8.5 Example: One Tricky Row](#85-example-one-tricky-row)
+  - [8.5 Example: How EntryLens Catches a Mistake](#85-example-how-entrylens-catches-a-mistake)
   - [8.6 Why This Design Works](#86-why-this-design-works)
 - [9. Data Flow](#9-data-flow)
 - [10. Expected Output](#10-expected-output)
@@ -308,7 +308,7 @@ Only unsure rows get here. The **same SLM** reads the row four different ways an
 - **Three separate splits:** train teaches the model, calibrate sets the trust thresholds, and test is never touched until the final score.
 ---
  
-````md
+
 ### 8.5 Example: How EntryLens Catches a Mistake
 
 > **Situation:** A company transfers ₹50,000 from **HDFC Bank → ICICI Bank**.  
@@ -360,8 +360,8 @@ Examples  → Contra
 ```
 
 This keeps the example focused on the one thing you want judges to understand: **EntryLens doesn't blindly trust the first model prediction.**
-```
 
+```
  
 ### 8.6 Why This Design Works
  
